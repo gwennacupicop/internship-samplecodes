@@ -73,13 +73,23 @@ func subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Listens for messages and writes them to the response
+	wait := make(chan struct{})
 	go func() {
-		for msg := range ch {
-			_, err := w.Write([]byte(msg + "\n"))
-			if err != nil {
+		defer func() { wait <- struct{}{} }()
+		for {
+			select {
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				_, err := w.Write([]byte(msg + "\n"))
+				if err != nil {
+					return
+				}
+				w.(http.Flusher).Flush()
+			case <-r.Context().Done():
 				return
 			}
-			w.(http.Flusher).Flush()
 		}
 	}()
 
@@ -91,6 +101,7 @@ func subscribeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.(http.Flusher).Flush()
+	<-wait
 }
 
 type PubSub struct {
